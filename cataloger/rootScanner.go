@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"time"
 )
@@ -84,8 +85,8 @@ func (s *rootScanner) generate() error {
 		return err
 	}
 
-	for _, baseDirectory := range s.options.BaseDirectories {
-		err = s.processDirectory(baseDirectory)
+	for _, source := range s.options.Sources {
+		err = s.processSource(source)
 		if err != nil {
 			return err
 		}
@@ -94,38 +95,38 @@ func (s *rootScanner) generate() error {
 	return nil
 }
 
-func (s *rootScanner) processDirectory(baseDirectory string) error {
-	return fs.WalkDir(s.options.FS, baseDirectory, func(path string, d fs.DirEntry, err error) error {
+func (s *rootScanner) processSource(source Source) error {
+	return fs.WalkDir(source.FS, ".", func(path1 string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			ignoreFile := filepath.Join(path, s.options.IgnoreFile)
-			ignoreFileStat, err := fs.Stat(s.options.FS, ignoreFile)
+			ignoreFile := path.Join(path1, s.options.IgnoreFile)
+			ignoreFileStat, err := fs.Stat(source.FS, ignoreFile)
 			if err != nil {
 				if !os.IsNotExist(err) {
 					return err
 				}
 			} else if !ignoreFileStat.IsDir() {
-				err = s.recordIgnored(path + "/")
+				err = s.recordIgnored(path1 + "/")
 				if err != nil {
 					return err
 				}
-				return filepath.SkipDir
+				return fs.SkipDir
 			}
 
-			anchorFile := filepath.Join(path, s.options.AnchorFile)
-			anchorFileStat, err := fs.Stat(s.options.FS, anchorFile)
+			anchorFile := path.Join(path1, s.options.AnchorFile)
+			anchorFileStat, err := fs.Stat(source.FS, anchorFile)
 			if err != nil {
 				if !os.IsNotExist(err) {
 					return err
 				}
 			} else if !anchorFileStat.IsDir() {
-				subFs, err := fs.Sub(s.options.FS, path)
+				subFs, err := fs.Sub(source.FS, path1)
 				if err != nil {
 					return err
 				}
-				ps, err := newProjectScanner(subFs, filepath.Join(s.options.RootDir, path), filepath.Join(s.options.OutputDir, d.Name()), s.options.IgnoreFile)
+				ps, err := newProjectScanner(subFs, path.Join(source.RootDir, path1), filepath.Join(s.options.OutputDir, d.Name()), s.options.IgnoreFile)
 				if err != nil {
 					return err
 				}
@@ -137,10 +138,10 @@ func (s *rootScanner) processDirectory(baseDirectory string) error {
 				if err != nil {
 					return err
 				}
-				return filepath.SkipDir
+				return fs.SkipDir
 			}
 		} else {
-			return s.recordUnfiled(path, d)
+			return s.recordUnfiled(path1, d)
 		}
 		return nil
 	})

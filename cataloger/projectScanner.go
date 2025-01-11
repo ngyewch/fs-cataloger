@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -103,38 +104,38 @@ func (s *projectScanner) recordFiled(path string, d fs.DirEntry) error {
 }
 
 func (s *projectScanner) generate() error {
-	err := fs.WalkDir(s.fs, ".", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(s.fs, ".", func(path1 string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
 			if d.Name() == ".git" || d.Name() == ".devbox" || d.Name() == "node_modules" || d.Name() == ".gradle" {
-				return filepath.SkipDir
+				return fs.SkipDir
 			}
-			ignoreFile := filepath.Join(path, s.ignoreFile)
+			ignoreFile := path.Join(path1, s.ignoreFile)
 			ignoreFileStat, err := fs.Stat(s.fs, ignoreFile)
 			if err != nil {
 				if !os.IsNotExist(err) {
 					return err
 				}
 			} else if !ignoreFileStat.IsDir() {
-				err = s.recordIgnored(path + "/")
+				err = s.recordIgnored(path1 + "/")
 				if err != nil {
 					return err
 				}
-				return filepath.SkipDir
+				return fs.SkipDir
 			}
 		} else {
-			if strings.HasSuffix(path, ".txt") ||
-				strings.HasSuffix(path, ".md") ||
-				strings.HasSuffix(path, ".adoc") {
-				targetPath := filepath.Join(s.outputDir, path)
-				err = s.copyFile(path, targetPath)
+			if strings.HasSuffix(path1, ".txt") ||
+				strings.HasSuffix(path1, ".md") ||
+				strings.HasSuffix(path1, ".adoc") {
+				targetPath := filepath.Join(s.outputDir, path1)
+				err = s.copyFile(path1, targetPath)
 				if err != nil {
 					return err
 				}
 			}
-			return s.recordFiled(path, d)
+			return s.recordFiled(path1, d)
 		}
 		return nil
 	})

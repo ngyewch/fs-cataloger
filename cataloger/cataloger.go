@@ -2,17 +2,18 @@ package cataloger
 
 import (
 	"io/fs"
-	"time"
 )
 
 type Options struct {
-	RootDir         string
-	FS              fs.FS
-	AnchorFile      string
-	IgnoreFile      string
-	OutputDir       string
-	BaseDirectories []string
-	TimeLocation    *time.Location
+	AnchorFile string
+	IgnoreFile string
+	OutputDir  string
+	Sources    []Source
+}
+
+type Source struct {
+	RootDir string
+	FS      fs.FS
 }
 
 func Generate(options Options) error {
