@@ -5,7 +5,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"log"
 	"os"
-	"time"
+	"path/filepath"
 )
 
 var (
@@ -51,19 +51,26 @@ func doMain(cCtx *cli.Context) error {
 	outputDir := outputDirFlag.Get(cCtx)
 	baseDirectories := cCtx.Args().Slice()
 
-	timeLocation, err := time.LoadLocation("Asia/Singapore")
-	if err != nil {
-		return err
+	rootDir := "/"
+	rootFs := os.DirFS(rootDir)
+
+	for i, baseDirectory := range baseDirectories {
+		relativePath, err := filepath.Rel("/", baseDirectory)
+		if err != nil {
+			return err
+		}
+		baseDirectories[i] = relativePath
 	}
 
 	options := cataloger.Options{
+		RootDir:         rootDir,
+		FS:              rootFs,
 		AnchorFile:      anchorFile,
 		IgnoreFile:      ignoreFile,
 		OutputDir:       outputDir,
 		BaseDirectories: baseDirectories,
-		TimeLocation:    timeLocation,
 	}
-	err = cataloger.Generate(options)
+	err := cataloger.Generate(options)
 	if err != nil {
 		return err
 	}

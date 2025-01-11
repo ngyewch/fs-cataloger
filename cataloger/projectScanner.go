@@ -13,7 +13,7 @@ import (
 )
 
 type projectScanner struct {
-	baseDir        string
+	fs             fs.FS
 	outputDir      string
 	ignoreFile     string
 	metadata       *metadata
@@ -28,13 +28,13 @@ type metadata struct {
 	TotalSize int64  `json:"totalSize"`
 }
 
-func newProjectScanner(baseDir string, outputDir string, ignoreFile string) (*projectScanner, error) {
+func newProjectScanner(baseFS fs.FS, baseDir string, outputDir string, ignoreFile string) (*projectScanner, error) {
 	err := os.MkdirAll(outputDir, 0755)
 	if err != nil {
 		return nil, err
 	}
 	return &projectScanner{
-		baseDir:    baseDir,
+		fs:         baseFS,
 		outputDir:  outputDir,
 		ignoreFile: ignoreFile,
 		metadata: &metadata{
@@ -103,36 +103,38 @@ func (s *projectScanner) recordFiled(path string, d fs.DirEntry) error {
 }
 
 func (s *projectScanner) generate() error {
-	err := filepath.WalkDir(s.baseDir, func(path string, d fs.DirEntry, err error) error {
-		relativePath, err := filepath.Rel(s.baseDir, path)
+	err := fs.WalkDir(s.fs, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
+			if d.Name() == ".git" || d.Name() == ".devbox" || d.Name() == "node_modules" || d.Name() == ".gradle" {
+				return filepath.SkipDir
+			}
 			ignoreFile := filepath.Join(path, s.ignoreFile)
-			ignoreFileStat, err := os.Stat(ignoreFile)
+			ignoreFileStat, err := fs.Stat(s.fs, ignoreFile)
 			if err != nil {
 				if !os.IsNotExist(err) {
 					return err
 				}
 			} else if !ignoreFileStat.IsDir() {
-				err = s.recordIgnored(relativePath + "/")
+				err = s.recordIgnored(path + "/")
 				if err != nil {
 					return err
 				}
 				return filepath.SkipDir
 			}
 		} else {
-			if strings.HasSuffix(relativePath, ".txt") ||
-				strings.HasSuffix(relativePath, ".md") ||
-				strings.HasSuffix(relativePath, ".adoc") {
-				targetPath := filepath.Join(s.outputDir, relativePath)
-				err = copyFile(path, targetPath)
+			if strings.HasSuffix(path, ".txt") ||
+				strings.HasSuffix(path, ".md") ||
+				strings.HasSuffix(path, ".adoc") {
+				targetPath := filepath.Join(s.outputDir, path)
+				err = s.copyFile(path, targetPath)
 				if err != nil {
 					return err
 				}
 			}
-			return s.recordFiled(relativePath, d)
+			return s.recordFiled(path, d)
 		}
 		return nil
 	})
@@ -158,12 +160,12 @@ func (s *projectScanner) generate() error {
 	return nil
 }
 
-func copyFile(src string, dst string) error {
-	r, err := os.Open(src)
+func (s *projectScanner) copyFile(src string, dst string) error {
+	r, err := s.fs.Open(src)
 	if err != nil {
 		return err
 	}
-	defer func(r *os.File) {
+	defer func(r fs.File) {
 		_ = r.Close()
 	}(r)
 

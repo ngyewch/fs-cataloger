@@ -1,10 +1,13 @@
 package cataloger
 
 import (
+	"io/fs"
 	"time"
 )
 
 type Options struct {
+	RootDir         string
+	FS              fs.FS
 	AnchorFile      string
 	IgnoreFile      string
 	OutputDir       string

@@ -95,10 +95,13 @@ func (s *rootScanner) generate() error {
 }
 
 func (s *rootScanner) processDirectory(baseDirectory string) error {
-	return filepath.WalkDir(baseDirectory, func(path string, d fs.DirEntry, err error) error {
+	return fs.WalkDir(s.options.FS, baseDirectory, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
 		if d.IsDir() {
 			ignoreFile := filepath.Join(path, s.options.IgnoreFile)
-			ignoreFileStat, err := os.Stat(ignoreFile)
+			ignoreFileStat, err := fs.Stat(s.options.FS, ignoreFile)
 			if err != nil {
 				if !os.IsNotExist(err) {
 					return err
@@ -112,17 +115,25 @@ func (s *rootScanner) processDirectory(baseDirectory string) error {
 			}
 
 			anchorFile := filepath.Join(path, s.options.AnchorFile)
-			anchorFileStat, err := os.Stat(anchorFile)
+			anchorFileStat, err := fs.Stat(s.options.FS, anchorFile)
 			if err != nil {
 				if !os.IsNotExist(err) {
 					return err
 				}
 			} else if !anchorFileStat.IsDir() {
-				ps, err := newProjectScanner(path, filepath.Join(s.options.OutputDir, d.Name()), s.options.IgnoreFile)
+				subFs, err := fs.Sub(s.options.FS, path)
+				if err != nil {
+					return err
+				}
+				ps, err := newProjectScanner(subFs, filepath.Join(s.options.RootDir, path), filepath.Join(s.options.OutputDir, d.Name()), s.options.IgnoreFile)
 				if err != nil {
 					return err
 				}
 				err = ps.generate()
+				if err != nil {
+					return err
+				}
+				err = ps.Close()
 				if err != nil {
 					return err
 				}
