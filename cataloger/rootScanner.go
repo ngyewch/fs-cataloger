@@ -1,0 +1,136 @@
+package cataloger
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+type rootScanner struct {
+	options          Options
+	ignoredWriter    io.WriteCloser
+	unfiledWriter    io.WriteCloser
+	unfiledCsvWriter *csv.Writer
+}
+
+func (s *rootScanner) Close() error {
+	if s.ignoredWriter != nil {
+		err := s.ignoredWriter.Close()
+		if err != nil {
+			return err
+		}
+	}
+	if s.unfiledCsvWriter != nil {
+		s.unfiledCsvWriter.Flush()
+	}
+	if s.unfiledWriter != nil {
+		err := s.unfiledWriter.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *rootScanner) recordIgnored(path string) error {
+	if s.ignoredWriter == nil {
+		f, err := os.Create(filepath.Join(s.options.OutputDir, "ignored.txt"))
+		if err != nil {
+			return err
+		}
+		s.ignoredWriter = f
+	}
+	_, err := io.WriteString(s.ignoredWriter, fmt.Sprintf("%s\n", path))
+	return err
+}
+
+func (s *rootScanner) recordUnfiled(path string, d fs.DirEntry) error {
+	if s.unfiledCsvWriter == nil {
+		if s.unfiledWriter == nil {
+			f, err := os.Create(filepath.Join(s.options.OutputDir, "unfiled.csv"))
+			if err != nil {
+				return err
+			}
+			s.unfiledWriter = f
+		}
+		s.unfiledCsvWriter = csv.NewWriter(s.unfiledWriter)
+		err := s.unfiledCsvWriter.Write([]string{"path", "size", "modified"})
+		if err != nil {
+			return err
+		}
+	}
+	fileInfo, err := d.Info()
+	if err != nil {
+		return err
+	}
+	return s.unfiledCsvWriter.Write([]string{
+		path,
+		fmt.Sprintf("%d", fileInfo.Size()),
+		fileInfo.ModTime().Format(time.RFC3339),
+	})
+}
+
+func (s *rootScanner) generate() error {
+	err := os.RemoveAll(s.options.OutputDir)
+	if err != nil {
+		return err
+	}
+	err = os.MkdirAll(s.options.OutputDir, 0755)
+	if err != nil {
+		return err
+	}
+
+	for _, baseDirectory := range s.options.BaseDirectories {
+		err = s.processDirectory(baseDirectory)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *rootScanner) processDirectory(baseDirectory string) error {
+	return filepath.WalkDir(baseDirectory, func(path string, d fs.DirEntry, err error) error {
+		if d.IsDir() {
+			ignoreFile := filepath.Join(path, s.options.IgnoreFile)
+			ignoreFileStat, err := os.Stat(ignoreFile)
+			if err != nil {
+				if !os.IsNotExist(err) {
+					return err
+				}
+			} else if !ignoreFileStat.IsDir() {
+				err = s.recordIgnored(path + "/")
+				if err != nil {
+					return err
+				}
+				return filepath.SkipDir
+			}
+
+			anchorFile := filepath.Join(path, s.options.AnchorFile)
+			anchorFileStat, err := os.Stat(anchorFile)
+			if err != nil {
+				if !os.IsNotExist(err) {
+					return err
+				}
+			} else if !anchorFileStat.IsDir() {
+				ps, err := newProjectScanner(path, filepath.Join(s.options.OutputDir, d.Name()), s.options.IgnoreFile)
+				if err != nil {
+					return err
+				}
+				err = ps.generate()
+				if err != nil {
+					return err
+				}
+				return filepath.SkipDir
+			}
+		} else {
+			return s.recordUnfiled(path, d)
+		}
+		return nil
+	})
+}
