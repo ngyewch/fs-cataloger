@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/ngyewch/fs-cataloger/cataloger"
@@ -25,7 +26,13 @@ func doMain(cCtx *cli.Context) error {
 		username := synologyUsernameFlag.Get(cCtx)
 		password := synologyPasswordFlag.Get(cCtx)
 
-		c, err := api.NewClient(baseUrl, &http.Client{})
+		c, err := api.NewClient(baseUrl, &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			},
+		})
 		if err != nil {
 			return err
 		}
