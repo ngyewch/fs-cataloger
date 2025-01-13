@@ -37,19 +37,19 @@ func (s *rootScanner) Close() error {
 	return nil
 }
 
-func (s *rootScanner) recordIgnored(path string) error {
+func (s *rootScanner) recordIgnored(source Source, path1 string) error {
 	if s.ignoredWriter == nil {
-		f, err := os.Create(filepath.Join(s.options.OutputDir, "ignored.txt"))
+		f, err := os.Create(filepath.Join(s.options.OutputDir, "00-ignored.txt"))
 		if err != nil {
 			return err
 		}
 		s.ignoredWriter = f
 	}
-	_, err := io.WriteString(s.ignoredWriter, fmt.Sprintf("%s\n", path))
+	_, err := io.WriteString(s.ignoredWriter, fmt.Sprintf("%s\n", path.Join(source.RootDir, path1)))
 	return err
 }
 
-func (s *rootScanner) recordUnfiled(path string, d fs.DirEntry) error {
+func (s *rootScanner) recordUnfiled(source Source, path1 string, d fs.DirEntry) error {
 	if s.unfiledCsvWriter == nil {
 		if s.unfiledWriter == nil {
 			f, err := os.Create(filepath.Join(s.options.OutputDir, "unfiled.csv"))
@@ -69,7 +69,7 @@ func (s *rootScanner) recordUnfiled(path string, d fs.DirEntry) error {
 		return err
 	}
 	return s.unfiledCsvWriter.Write([]string{
-		path,
+		path.Join(source.RootDir, path1),
 		fmt.Sprintf("%d", fileInfo.Size()),
 		fileInfo.ModTime().Format(time.RFC3339),
 	})
@@ -101,6 +101,13 @@ func (s *rootScanner) processSource(source Source) error {
 			return err
 		}
 		if d.IsDir() {
+			if d.Name() == ".git" || d.Name() == "#recycle" {
+				err = s.recordIgnored(source, path1)
+				if err != nil {
+					return err
+				}
+				return fs.SkipDir
+			}
 			ignoreFile := path.Join(path1, s.options.IgnoreFile)
 			ignoreFileStat, err := fs.Stat(source.FS, ignoreFile)
 			if err != nil {
@@ -108,7 +115,7 @@ func (s *rootScanner) processSource(source Source) error {
 					return err
 				}
 			} else if !ignoreFileStat.IsDir() {
-				err = s.recordIgnored(path1 + "/")
+				err = s.recordIgnored(source, path1)
 				if err != nil {
 					return err
 				}
@@ -141,7 +148,7 @@ func (s *rootScanner) processSource(source Source) error {
 				return fs.SkipDir
 			}
 		} else {
-			return s.recordUnfiled(path1, d)
+			return s.recordUnfiled(source, path1, d)
 		}
 		return nil
 	})

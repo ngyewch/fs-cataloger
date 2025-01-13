@@ -65,7 +65,7 @@ func (s *projectScanner) Close() error {
 
 func (s *projectScanner) recordIgnored(path string) error {
 	if s.ignoredWriter == nil {
-		f, err := os.Create(filepath.Join(s.outputDir, "ignored.txt"))
+		f, err := os.Create(filepath.Join(s.outputDir, "00-ignored.txt"))
 		if err != nil {
 			return err
 		}
@@ -109,7 +109,11 @@ func (s *projectScanner) generate() error {
 			return err
 		}
 		if d.IsDir() {
-			if d.Name() == ".git" || d.Name() == ".devbox" || d.Name() == "node_modules" || d.Name() == ".gradle" {
+			if d.Name() == ".git" || d.Name() == "#recycle" {
+				err = s.recordIgnored(path1)
+				if err != nil {
+					return err
+				}
 				return fs.SkipDir
 			}
 			ignoreFile := path.Join(path1, s.ignoreFile)
@@ -119,7 +123,7 @@ func (s *projectScanner) generate() error {
 					return err
 				}
 			} else if !ignoreFileStat.IsDir() {
-				err = s.recordIgnored(path1 + "/")
+				err = s.recordIgnored(path1)
 				if err != nil {
 					return err
 				}
@@ -129,10 +133,17 @@ func (s *projectScanner) generate() error {
 			if strings.HasSuffix(path1, ".txt") ||
 				strings.HasSuffix(path1, ".md") ||
 				strings.HasSuffix(path1, ".adoc") {
-				targetPath := filepath.Join(s.outputDir, path1)
-				err = s.copyFile(path1, targetPath)
+
+				fileInfo, err := d.Info()
 				if err != nil {
 					return err
+				}
+				if (fileInfo.Size() > 0) && (fileInfo.Size() <= 8*1024) { // TODO CLI flag
+					targetPath := filepath.Join(s.outputDir, path1)
+					err = s.copyFile(path1, targetPath)
+					if err != nil {
+						return err
+					}
 				}
 			}
 			return s.recordFiled(path1, d)
